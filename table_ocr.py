@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import csv
 import streamlit as st
 import base64
+from io import BytesIO
 
 try:
     from PIL import Image
@@ -25,6 +26,10 @@ if ocr_img:
 st.sidebar.title("Guide")
 st.sidebar.markdown("> Quality screenshot images of tables taken from phone, laptop, etc is preferred")
 st.sidebar.markdown("> Images captured with phone camera yields incomplete tables")
+st.sidebar.markdown("""> Images affected by artifacts including partial occulsion, distorted perspective, 
+                    and complex background yields incomplete tables""")
+st.sidebar.markdown(""" > Handwriting recognition on images containing tables will be significantly harder
+                       due to infinite variations of handwriting styles and limitations of optical character recognition""")
 
 
 ###################### loading images #######################
@@ -193,16 +198,43 @@ if uploaded_file is not None:
     # Creating a dataframe of the generated OCR list
     arr = np.array(outer)
     dataframe = pd.DataFrame(arr.reshape(len(row), countcol))
+    for col in dataframe.columns:
+        dataframe[col] = dataframe[col].astype(str)
+        dataframe[col] = np.where(dataframe[col].str.contains("\n"), dataframe[col].str[:-2], dataframe[col])
     st.subheader("DataFrame")
     st.dataframe(dataframe)
     
     # Download dataframe 
-    download = st.button("Download csv file")
+    col1, col2 = st.beta_columns(2)
+    
+    download = col1.button("Download csv file")
     if download:
         csv = dataframe.to_csv(index=False)
         b64 = base64.b64encode(csv.encode()).decode()
         linko= f'<a href="data:file/csv;base64,{b64}" download="DataFrame.csv">Download csv file</a>'
-        st.markdown(linko, unsafe_allow_html=True)
+        col1.markdown(linko, unsafe_allow_html=True)
+        
+    download2 = col2.button("Download excel xlsx file")
+    if download2:
+        @st.cache(suppress_st_warning=True)
+        def to_excel(df):
+            output = BytesIO()
+            writer = pd.ExcelWriter(output, engine='xlsxwriter')
+            df.to_excel(writer, sheet_name='Sheet1')
+            writer.save()
+            processed_data = output.getvalue()
+            return processed_data
+
+        @st.cache(suppress_st_warning=True)
+        def get_table_download_link(df):
+            """Generates a link allowing the data in a given panda dataframe to be downloaded
+            in:  dataframe
+            out: href string
+            """
+            val = to_excel(df)
+            b64 = base64.b64encode(val)  
+            return f'<a href="data:application/octet-stream;base64,{b64.decode()}" download="DataFrame.xlsx">Download excel xlsx file</a>' 
+        col2.markdown(get_table_download_link(dataframe), unsafe_allow_html=True)
 
     
 
